@@ -1,0 +1,309 @@
+version: '3'
+services:
+  eth-stats:
+    image: quay.io/amis/ethstats:latest
+    ports:
+      - '3000:3000'
+    environment:
+      - WS_SECRET=bb98a0b6442386d0cdf8a31b267892c1
+    restart: always
+    networks:
+      app_net:
+        ipv4_address: 172.16.239.9
+  validator-0:
+    hostname: validator-0
+    image: quorumengineering/quorum:2.1.1
+    ports:
+      - '30303:30303'
+      - '8545:8545'
+    volumes:
+      - 0:/constellation:z
+    depends_on:
+      - constellation-0
+    environment:
+      - PRIVATE_CONFIG=/constellation/tm.conf
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        mkdir -p /eth/geth
+        echo '{"config":{"chainId":10,"homesteadBlock":0,"eip150Block":0,"eip150Hash":"0x0000000000000000000000000000000000000000000000000000000000000000","eip155Block":0,"eip158Block":0,"byzantiumBlock":0,"constantinopleBlock":0,"istanbul":{"epoch":30000,"policy":0},"txnSizeLimit":64,"isQuorum":true},"nonce":"0x0","timestamp":"0x5d84caee","extraData":"0x0000000000000000000000000000000000000000000000000000000000000000f89af854943b3ed883e8bbabf1eb78608e671c3c5d548bffec9414e44c03a52d7796aadccd7985c4b88c79b4263e947f6471ac62f85dbd8851f8fd6f880de924e5e14f94906266a2d01b6059cd097b55633533cf6381e8a4b8410000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c0","gasLimit":"0xe0000000","difficulty":"0x1","mixHash":"0x63746963616c2062797a616e74696e65206661756c7420746f6c6572616e6365","coinbase":"0x0000000000000000000000000000000000000000","alloc":{"14e44c03a52d7796aadccd7985c4b88c79b4263e":{"balance":"0x446c3b15f9926687d2c40534fdb564000000000000"},"3b3ed883e8bbabf1eb78608e671c3c5d548bffec":{"balance":"0x446c3b15f9926687d2c40534fdb564000000000000"},"7f6471ac62f85dbd8851f8fd6f880de924e5e14f":{"balance":"0x446c3b15f9926687d2c40534fdb564000000000000"},"906266a2d01b6059cd097b55633533cf6381e8a4":{"balance":"0x446c3b15f9926687d2c40534fdb564000000000000"}},"number":"0x0","gasUsed":"0x0","parentHash":"0x0000000000000000000000000000000000000000000000000000000000000000"}' > /eth/genesis.json
+        echo '["enode://06ace4a6185d8bd937a049505d39bc138aada6e05a4ca5023cca6ea22b7f059496f66ee29600f0605a1ea1f56464495abd80f210ac5c865997e08c69bc3333fc@127.0.0.1:21000?discport=0","enode://4892a3f89137b7afeb92f9ba7d6bc7390a4353cdaf34d6d9e3a4c3e4a7a076103ac9d5742debdde2f44bddefa1db13762be6feab904a3c359f5fe92c0687b3d8@127.0.0.1:21001?discport=0","enode://200a6d5dbef9a0afa7b2dbb50501fa7513ac4156ddf5e86aad9bf2439adb8dcd5069527765e078a00303bf90ea4c2c37c5e55c5bd63a31aae6e20fdcf2e85802@127.0.0.1:21002?discport=0","enode://008e50ec474b4f045e1f15f95342ab2264906eeba05c22d51ffe08ed283725598c153ea0297f1de53d8d234abb9b94f79ba34dff34d1fdc25beaa6a8a0794ac1@127.0.0.1:21003?discport=0"]' > /eth/geth/static-nodes.json
+        geth --datadir "/eth" init "/eth/genesis.json"
+        geth \
+        --identity "validator-0" \
+        --rpc \
+        --rpcaddr "0.0.0.0" \
+        --rpcport "8545" \
+        --rpccorsdomain "*" \
+        --datadir "/eth" \
+        --port "30303" \
+        --rpcapi "db,eth,net,web3,istanbul,personal" \
+        --networkid "2017" \
+        --nat "any" \
+        --nodekeyhex "cb11e2eee43ff65031ac4aa11a90e8d799af0a7661e89c6cf9884b526e4868ad" \
+        --mine \
+        --debug \
+        --metrics \
+        --syncmode "full" \
+        --ethstats "validator-0:bb98a0b6442386d0cdf8a31b267892c1@172.16.239.9:3000" \
+        --gasprice 0
+    networks:
+      app_net:
+        ipv4_address: 172.16.239.10
+    restart: always
+  constellation-0:
+    hostname: constellation-0
+    image: quorumengineering/constellation:latest
+    ports:
+      - '10000:10000'
+    volumes:
+      - 0:/constellation:z
+      - .:/tmp/
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        mkdir -p /constellation
+        echo "socket=\"/constellation/tm.ipc\"\npublickeys=[\"/constellation/tm.pub\"]\n" > /constellation/tm.conf
+        constellation-node --generatekeys=/constellation/tm
+        cp /constellation/tm.pub /tmp/tm0.pub
+        constellation-node \
+          --url=http://172.16.239.100:10000/ \
+          --port=10000 \
+          --socket=/constellation/tm.ipc \
+          --othernodes=http://172.16.239.101:10001/,http://172.16.239.102:10002/,http://172.16.239.103:10003/ \
+          --publickeys=/constellation/tm.pub \
+          --privatekeys=/constellation/tm.key \
+          --storage=/constellation \
+          --verbosity=4
+    networks:
+      app_net:
+        ipv4_address: 172.16.239.100
+    restart: always
+  validator-1:
+    hostname: validator-1
+    image: quorumengineering/quorum:2.1.1
+    ports:
+      - '30304:30303'
+      - '8546:8545'
+    volumes:
+      - 1:/constellation:z
+    depends_on:
+      - constellation-1
+    environment:
+      - PRIVATE_CONFIG=/constellation/tm.conf
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        mkdir -p /eth/geth
+        echo '{"config":{"chainId":10,"homesteadBlock":0,"eip150Block":0,"eip150Hash":"0x0000000000000000000000000000000000000000000000000000000000000000","eip155Block":0,"eip158Block":0,"byzantiumBlock":0,"constantinopleBlock":0,"istanbul":{"epoch":30000,"policy":0},"txnSizeLimit":64,"isQuorum":true},"nonce":"0x0","timestamp":"0x5d84caee","extraData":"0x0000000000000000000000000000000000000000000000000000000000000000f89af854943b3ed883e8bbabf1eb78608e671c3c5d548bffec9414e44c03a52d7796aadccd7985c4b88c79b4263e947f6471ac62f85dbd8851f8fd6f880de924e5e14f94906266a2d01b6059cd097b55633533cf6381e8a4b8410000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c0","gasLimit":"0xe0000000","difficulty":"0x1","mixHash":"0x63746963616c2062797a616e74696e65206661756c7420746f6c6572616e6365","coinbase":"0x0000000000000000000000000000000000000000","alloc":{"14e44c03a52d7796aadccd7985c4b88c79b4263e":{"balance":"0x446c3b15f9926687d2c40534fdb564000000000000"},"3b3ed883e8bbabf1eb78608e671c3c5d548bffec":{"balance":"0x446c3b15f9926687d2c40534fdb564000000000000"},"7f6471ac62f85dbd8851f8fd6f880de924e5e14f":{"balance":"0x446c3b15f9926687d2c40534fdb564000000000000"},"906266a2d01b6059cd097b55633533cf6381e8a4":{"balance":"0x446c3b15f9926687d2c40534fdb564000000000000"}},"number":"0x0","gasUsed":"0x0","parentHash":"0x0000000000000000000000000000000000000000000000000000000000000000"}' > /eth/genesis.json
+        echo '["enode://06ace4a6185d8bd937a049505d39bc138aada6e05a4ca5023cca6ea22b7f059496f66ee29600f0605a1ea1f56464495abd80f210ac5c865997e08c69bc3333fc@127.0.0.1:21000?discport=0","enode://4892a3f89137b7afeb92f9ba7d6bc7390a4353cdaf34d6d9e3a4c3e4a7a076103ac9d5742debdde2f44bddefa1db13762be6feab904a3c359f5fe92c0687b3d8@127.0.0.1:21001?discport=0","enode://200a6d5dbef9a0afa7b2dbb50501fa7513ac4156ddf5e86aad9bf2439adb8dcd5069527765e078a00303bf90ea4c2c37c5e55c5bd63a31aae6e20fdcf2e85802@127.0.0.1:21002?discport=0","enode://008e50ec474b4f045e1f15f95342ab2264906eeba05c22d51ffe08ed283725598c153ea0297f1de53d8d234abb9b94f79ba34dff34d1fdc25beaa6a8a0794ac1@127.0.0.1:21003?discport=0"]' > /eth/geth/static-nodes.json
+        geth --datadir "/eth" init "/eth/genesis.json"
+        geth \
+        --identity "validator-1" \
+        --rpc \
+        --rpcaddr "0.0.0.0" \
+        --rpcport "8545" \
+        --rpccorsdomain "*" \
+        --datadir "/eth" \
+        --port "30303" \
+        --rpcapi "db,eth,net,web3,istanbul,personal" \
+        --networkid "2017" \
+        --nat "any" \
+        --nodekeyhex "7bd162db6d814d879c968378cfebdec89a12c2606bb5140f8e39d09e0c6739b8" \
+        --mine \
+        --debug \
+        --metrics \
+        --syncmode "full" \
+        --ethstats "validator-1:bb98a0b6442386d0cdf8a31b267892c1@172.16.239.9:3000" \
+        --gasprice 0
+    networks:
+      app_net:
+        ipv4_address: 172.16.239.11
+    restart: always
+  constellation-1:
+    hostname: constellation-1
+    image: quorumengineering/constellation:latest
+    ports:
+      - '10001:10001'
+    volumes:
+      - 1:/constellation:z
+      - .:/tmp/
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        mkdir -p /constellation
+        echo "socket=\"/constellation/tm.ipc\"\npublickeys=[\"/constellation/tm.pub\"]\n" > /constellation/tm.conf
+        constellation-node --generatekeys=/constellation/tm
+        cp /constellation/tm.pub /tmp/tm1.pub
+        constellation-node \
+          --url=http://172.16.239.101:10001/ \
+          --port=10001 \
+          --socket=/constellation/tm.ipc \
+          --othernodes=http://172.16.239.100:10000/,http://172.16.239.102:10002/,http://172.16.239.103:10003/ \
+          --publickeys=/constellation/tm.pub \
+          --privatekeys=/constellation/tm.key \
+          --storage=/constellation \
+          --verbosity=4
+    networks:
+      app_net:
+        ipv4_address: 172.16.239.101
+    restart: always
+  validator-2:
+    hostname: validator-2
+    image: quorumengineering/quorum:2.1.1
+    ports:
+      - '30305:30303'
+      - '8547:8545'
+    volumes:
+      - 2:/constellation:z
+    depends_on:
+      - constellation-2
+    environment:
+      - PRIVATE_CONFIG=/constellation/tm.conf
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        mkdir -p /eth/geth
+        echo '{"config":{"chainId":10,"homesteadBlock":0,"eip150Block":0,"eip150Hash":"0x0000000000000000000000000000000000000000000000000000000000000000","eip155Block":0,"eip158Block":0,"byzantiumBlock":0,"constantinopleBlock":0,"istanbul":{"epoch":30000,"policy":0},"txnSizeLimit":64,"isQuorum":true},"nonce":"0x0","timestamp":"0x5d84caee","extraData":"0x0000000000000000000000000000000000000000000000000000000000000000f89af854943b3ed883e8bbabf1eb78608e671c3c5d548bffec9414e44c03a52d7796aadccd7985c4b88c79b4263e947f6471ac62f85dbd8851f8fd6f880de924e5e14f94906266a2d01b6059cd097b55633533cf6381e8a4b8410000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c0","gasLimit":"0xe0000000","difficulty":"0x1","mixHash":"0x63746963616c2062797a616e74696e65206661756c7420746f6c6572616e6365","coinbase":"0x0000000000000000000000000000000000000000","alloc":{"14e44c03a52d7796aadccd7985c4b88c79b4263e":{"balance":"0x446c3b15f9926687d2c40534fdb564000000000000"},"3b3ed883e8bbabf1eb78608e671c3c5d548bffec":{"balance":"0x446c3b15f9926687d2c40534fdb564000000000000"},"7f6471ac62f85dbd8851f8fd6f880de924e5e14f":{"balance":"0x446c3b15f9926687d2c40534fdb564000000000000"},"906266a2d01b6059cd097b55633533cf6381e8a4":{"balance":"0x446c3b15f9926687d2c40534fdb564000000000000"}},"number":"0x0","gasUsed":"0x0","parentHash":"0x0000000000000000000000000000000000000000000000000000000000000000"}' > /eth/genesis.json
+        echo '["enode://06ace4a6185d8bd937a049505d39bc138aada6e05a4ca5023cca6ea22b7f059496f66ee29600f0605a1ea1f56464495abd80f210ac5c865997e08c69bc3333fc@127.0.0.1:21000?discport=0","enode://4892a3f89137b7afeb92f9ba7d6bc7390a4353cdaf34d6d9e3a4c3e4a7a076103ac9d5742debdde2f44bddefa1db13762be6feab904a3c359f5fe92c0687b3d8@127.0.0.1:21001?discport=0","enode://200a6d5dbef9a0afa7b2dbb50501fa7513ac4156ddf5e86aad9bf2439adb8dcd5069527765e078a00303bf90ea4c2c37c5e55c5bd63a31aae6e20fdcf2e85802@127.0.0.1:21002?discport=0","enode://008e50ec474b4f045e1f15f95342ab2264906eeba05c22d51ffe08ed283725598c153ea0297f1de53d8d234abb9b94f79ba34dff34d1fdc25beaa6a8a0794ac1@127.0.0.1:21003?discport=0"]' > /eth/geth/static-nodes.json
+        geth --datadir "/eth" init "/eth/genesis.json"
+        geth \
+        --identity "validator-2" \
+        --rpc \
+        --rpcaddr "0.0.0.0" \
+        --rpcport "8545" \
+        --rpccorsdomain "*" \
+        --datadir "/eth" \
+        --port "30303" \
+        --rpcapi "db,eth,net,web3,istanbul,personal" \
+        --networkid "2017" \
+        --nat "any" \
+        --nodekeyhex "373eda0357ab17b2f2fd076da7741c78a0515ec86fd3f20adac239f1e2820933" \
+        --mine \
+        --debug \
+        --metrics \
+        --syncmode "full" \
+        --ethstats "validator-2:bb98a0b6442386d0cdf8a31b267892c1@172.16.239.9:3000" \
+        --gasprice 0
+    networks:
+      app_net:
+        ipv4_address: 172.16.239.12
+    restart: always
+  constellation-2:
+    hostname: constellation-2
+    image: quorumengineering/constellation:latest
+    ports:
+      - '10002:10002'
+    volumes:
+      - 2:/constellation:z
+      - .:/tmp/
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        mkdir -p /constellation
+        echo "socket=\"/constellation/tm.ipc\"\npublickeys=[\"/constellation/tm.pub\"]\n" > /constellation/tm.conf
+        constellation-node --generatekeys=/constellation/tm
+        cp /constellation/tm.pub /tmp/tm2.pub
+        constellation-node \
+          --url=http://172.16.239.102:10002/ \
+          --port=10002 \
+          --socket=/constellation/tm.ipc \
+          --othernodes=http://172.16.239.100:10000/,http://172.16.239.101:10001/,http://172.16.239.103:10003/ \
+          --publickeys=/constellation/tm.pub \
+          --privatekeys=/constellation/tm.key \
+          --storage=/constellation \
+          --verbosity=4
+    networks:
+      app_net:
+        ipv4_address: 172.16.239.102
+    restart: always
+  validator-3:
+    hostname: validator-3
+    image: quorumengineering/quorum:2.1.1
+    ports:
+      - '30306:30303'
+      - '8548:8545'
+    volumes:
+      - 3:/constellation:z
+    depends_on:
+      - constellation-3
+    environment:
+      - PRIVATE_CONFIG=/constellation/tm.conf
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        mkdir -p /eth/geth
+        echo '{"config":{"chainId":10,"homesteadBlock":0,"eip150Block":0,"eip150Hash":"0x0000000000000000000000000000000000000000000000000000000000000000","eip155Block":0,"eip158Block":0,"byzantiumBlock":0,"constantinopleBlock":0,"istanbul":{"epoch":30000,"policy":0},"txnSizeLimit":64,"isQuorum":true},"nonce":"0x0","timestamp":"0x5d84caee","extraData":"0x0000000000000000000000000000000000000000000000000000000000000000f89af854943b3ed883e8bbabf1eb78608e671c3c5d548bffec9414e44c03a52d7796aadccd7985c4b88c79b4263e947f6471ac62f85dbd8851f8fd6f880de924e5e14f94906266a2d01b6059cd097b55633533cf6381e8a4b8410000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c0","gasLimit":"0xe0000000","difficulty":"0x1","mixHash":"0x63746963616c2062797a616e74696e65206661756c7420746f6c6572616e6365","coinbase":"0x0000000000000000000000000000000000000000","alloc":{"14e44c03a52d7796aadccd7985c4b88c79b4263e":{"balance":"0x446c3b15f9926687d2c40534fdb564000000000000"},"3b3ed883e8bbabf1eb78608e671c3c5d548bffec":{"balance":"0x446c3b15f9926687d2c40534fdb564000000000000"},"7f6471ac62f85dbd8851f8fd6f880de924e5e14f":{"balance":"0x446c3b15f9926687d2c40534fdb564000000000000"},"906266a2d01b6059cd097b55633533cf6381e8a4":{"balance":"0x446c3b15f9926687d2c40534fdb564000000000000"}},"number":"0x0","gasUsed":"0x0","parentHash":"0x0000000000000000000000000000000000000000000000000000000000000000"}' > /eth/genesis.json
+        echo '["enode://06ace4a6185d8bd937a049505d39bc138aada6e05a4ca5023cca6ea22b7f059496f66ee29600f0605a1ea1f56464495abd80f210ac5c865997e08c69bc3333fc@127.0.0.1:21000?discport=0","enode://4892a3f89137b7afeb92f9ba7d6bc7390a4353cdaf34d6d9e3a4c3e4a7a076103ac9d5742debdde2f44bddefa1db13762be6feab904a3c359f5fe92c0687b3d8@127.0.0.1:21001?discport=0","enode://200a6d5dbef9a0afa7b2dbb50501fa7513ac4156ddf5e86aad9bf2439adb8dcd5069527765e078a00303bf90ea4c2c37c5e55c5bd63a31aae6e20fdcf2e85802@127.0.0.1:21002?discport=0","enode://008e50ec474b4f045e1f15f95342ab2264906eeba05c22d51ffe08ed283725598c153ea0297f1de53d8d234abb9b94f79ba34dff34d1fdc25beaa6a8a0794ac1@127.0.0.1:21003?discport=0"]' > /eth/geth/static-nodes.json
+        geth --datadir "/eth" init "/eth/genesis.json"
+        geth \
+        --identity "validator-3" \
+        --rpc \
+        --rpcaddr "0.0.0.0" \
+        --rpcport "8545" \
+        --rpccorsdomain "*" \
+        --datadir "/eth" \
+        --port "30303" \
+        --rpcapi "db,eth,net,web3,istanbul,personal" \
+        --networkid "2017" \
+        --nat "any" \
+        --nodekeyhex "a6e4343a16e7dfe8024202d3c94cf49b244ff168b10fd638cc77a0f23ae06fc8" \
+        --mine \
+        --debug \
+        --metrics \
+        --syncmode "full" \
+        --ethstats "validator-3:bb98a0b6442386d0cdf8a31b267892c1@172.16.239.9:3000" \
+        --gasprice 0
+    networks:
+      app_net:
+        ipv4_address: 172.16.239.13
+    restart: always
+  constellation-3:
+    hostname: constellation-3
+    image: quorumengineering/constellation:latest
+    ports:
+      - '10003:10003'
+    volumes:
+      - 3:/constellation:z
+      - .:/tmp/
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        mkdir -p /constellation
+        echo "socket=\"/constellation/tm.ipc\"\npublickeys=[\"/constellation/tm.pub\"]\n" > /constellation/tm.conf
+        constellation-node --generatekeys=/constellation/tm
+        cp /constellation/tm.pub /tmp/tm3.pub
+        constellation-node \
+          --url=http://172.16.239.103:10003/ \
+          --port=10003 \
+          --socket=/constellation/tm.ipc \
+          --othernodes=http://172.16.239.100:10000/,http://172.16.239.101:10001/,http://172.16.239.102:10002/ \
+          --publickeys=/constellation/tm.pub \
+          --privatekeys=/constellation/tm.key \
+          --storage=/constellation \
+          --verbosity=4
+    networks:
+      app_net:
+        ipv4_address: 172.16.239.103
+    restart: always
+networks:
+  app_net:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+      - subnet: 172.16.239.0/24
+volumes:
+  "0":
+  "1":
+  "2":
+  "3":
+
